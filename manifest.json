@@ -2,7 +2,7 @@
   "name": "ScoutPath",
   "short_name": "ScoutPath",
   "description": "Gestión scout para AISG",
-  "start_url": "./scoutpath_3_9.html",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#1E3A8A",
   "theme_color": "#1E3A8A",
