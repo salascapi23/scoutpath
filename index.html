@@ -4957,20 +4957,31 @@ async function marcarMisionCompletada(misionId){
   if(!myId) { showToast('Inicia sesión para completar misiones'); return; }
   if(estaMisionCompletada(misionId)) return;
 
+  // 1. Reflejo visual instantáneo (Optimista)
   const nueva = { mision_id: misionId, perfil_id: myId };
   state.misionesCompletadas.push(nueva);
   render();
   showToast('🎯 ¡Misión completada! Honor a tu palabra.');
-  
+
+  // 2. Guardado en la nube
   try{
-    await fetch(SUPABASE_MISIONES_COMP_REST, {
-      method: 'POST',
-      headers: sbHeaders({'Content-Type':'application/json', Prefer:'return:minimal'}),
+    const res = await fetch(SUPABASE_MISIONES_COMP_REST, {
+      method: 'POST', 
+      headers: sbHeaders({'Content-Type':'application/json', Prefer:'return=minimal'}), 
       body: JSON.stringify(nueva)
     });
-  }catch(e){ warnCloudFail('Guardar misión completada'); }
+    if(!res.ok){
+      // Si falla, deshacemos el cambio visual para que no haya trampas
+      state.misionesCompletadas = state.misionesCompletadas.filter(c => c.mision_id !== misionId);
+      render();
+      warnCloudFail('Guardar misión completada');
+    }
+  }catch(e){
+    state.misionesCompletadas = state.misionesCompletadas.filter(c => c.mision_id !== misionId);
+    render();
+    warnCloudFail('Guardar misión completada');
+  }
 }
-
 function renderMisiones(){
   const visibles = misionesVisibles();
   const esGestor = puedoGestionarGrupo(state.grupo ? state.grupo.nombre : null) || (state.seccionTipo === 'guilda' && puedoGestionarGuilda(state.grupo ? state.grupo.nombre : null, state.seccion));
@@ -6202,6 +6213,13 @@ function modalLocalNuevo(){
 
 /* ============================ HANDLERS ============================ */
 function attachHandlers(){
+// ===== HANDLERS DE MISIONES =====
+  document.querySelectorAll('[data-completar-mision]').forEach(b => {
+    b.onclick = (e) => { 
+      e.stopPropagation(); 
+      marcarMisionCompletada(b.dataset.completarMision); 
+    };
+  });
   // LOGIN
   document.querySelectorAll('[data-loginmode]').forEach(b=>{
     b.onclick = ()=>{ state.loginMode=b.dataset.loginmode; state.loginError=null; render(); };
