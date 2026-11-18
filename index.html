@@ -250,7 +250,6 @@
   .sticky:nth-child(4n+2){--rot:1.2deg;background:var(--sticky-purple);}
   .sticky:nth-child(4n+3){--rot:-1deg;background:var(--sticky-green);}
   .sticky:nth-child(4n+4){--rot:1.6deg;background:var(--sticky-blue);}
-  .sticky .pin{position:absolute;top:-8px;left:50%;transform:translateX(-50%);font-size:16px;}
   .sticky-badge{
     position:absolute;top:8px;right:8px;background:var(--wood-dark);color:#fff;font-size:9px;font-weight:800;
     padding:2px 7px;border-radius:5px;letter-spacing:.03em;
@@ -275,8 +274,10 @@
   /* =========================================================
      v3.9 — BADGES DE ESTADO, CANAL Y UI DE APROBACIONES
      ========================================================= */
-  .nota-badges{
-    position:absolute;top:6px;right:6px;display:flex;flex-direction:column;align-items:flex-end;gap:3px;max-width:78%;
+    .nota-badges{
+    position:absolute;top:6px;left:6px;right:6px;
+    display:flex;flex-direction:row;align-items:flex-start;flex-wrap:wrap;
+    gap:3px;max-width:calc(100% - 12px);
   }
   .nb{
     font-size:8.5px;font-weight:800;letter-spacing:.03em;padding:2px 6px;border-radius:5px;
@@ -1511,9 +1512,8 @@ function rolPuedeEscribir(rol){
 /* Rol/identidad/nombre efectivos: si hay una cuenta real (state.authProfile),
    manda ella; si no, se usa la sesión rápida de pruebas. Así todo el resto
    del código (permisos, chat, inscripciones...) funciona igual con ambas. */
-function currentRole(){ return state.authProfile ? state.authProfile.rol : ROLE_BY_SESSION[state.quickRole]; }
-function personaId(){ return state.authUser ? state.authUser.id : state.quickRole; }
-
+function currentRole(){ return state.authProfile ? state.authProfile.rol : null; }
+function personaId(){ return state.authUser ? state.authUser.id : null; }
 /* Devuelve el array de "pisos" del ascensor: todos los sitios a los que
    pertenece el usuario actual. Se calcula en cada render a partir de
    state.authProfile (el grupo con el que te registraste) y state.membresias
@@ -1623,7 +1623,7 @@ function irAPiso(piso){
 }
 function displayName(){
   if(state.authProfile) return `${state.authProfile.nombre||'Yo'} (${ROLE_LABELS[state.authProfile.rol]||state.authProfile.rol})`;
-  return QUICK_SESSIONS.find(q=>q.k===state.quickRole)?.label || 'Yo';
+  return 'Yo';
 }
 const SCOPE_LEVELS = ['Guilda','Grupo','Provincia','Comunidad','Hermes (Red Nacional)','Toda España (Global)'];
 /* Identidad "real" de cada sesión rápida: a qué grupo/provincia/comunidad
@@ -1660,11 +1660,10 @@ function homeCtx(){
       comunidad: state.authProfile.comunidad || state.comunidad || null,
     };
   }
-  const ctx = SESSION_CONTEXT[state.quickRole] || {};
   return {
-    grupo: ctx.grupo || (state.grupo ? state.grupo.nombre : null),
-    provincia: ctx.provincia || state.provincia || null,
-    comunidad: ctx.comunidad || state.comunidad || null,
+    grupo: state.grupo ? state.grupo.nombre : null,
+    provincia: state.provincia || null,
+    comunidad: state.comunidad || null,
   };
 }
 /* ¿Le debe llegar esta nota a la sesión activa?
@@ -2697,30 +2696,26 @@ const TABS_CORCHO = [
   {k:'actividades', l:'Actividades', i:'🧭'},{k:'scoutcar', l:'ScoutCar', i:'🚗'}
 ];
 
-const QUICK_SESSIONS = [
-  {k:'misev', label:'Miembro · Sevilla', cls:'qk-scouter'},
-  {k:'presi', label:'Presidente/a · Sevilla', cls:'qk-presi'},
-  {k:'coordg', label:'Coord. Guilda · Sevilla', cls:'qk-coord'},
-  {k:'ejec_ccaa', label:'Ejec. Comunidad · Andalucía', cls:'qk-ejec'},
-  {k:'ejec_nac', label:'Ejec. Nacional', cls:'qk-nac'},
-  {k:'hermes', label:'Hermes (Red Nacional)', cls:'qk-hermes'},
-];
-
 /* ============================ ESTADO ============================ */
 let state = {
   loggedIn:false,
-  session:'Ibero (Hermes Nacional 3) (hermes)',
+  session:null,
   corchoTab:'todo',
   mobileTab:'corcho', // 'corcho' | 'explorar' — solo se usa en pantallas estrechas
   notas: JSON.parse(JSON.stringify(NOTAS_INICIALES)), // se sobrescribe en cuanto llega el primer fetchNotas()
   inscripciones: [],       // {id, nota_id, persona, personaLabel, acompanantes, comentario} — quién se ha apuntado a qué
   adjuntos: [],            // {id, nota_id, nombre, tipo} — metadatos de documentos/imágenes pegados en una nota (el contenido se pide aparte, bajo demanda)
   adjuntosPendientes: [],  // {id, nombre, tipo, datos} — adjuntos que se están preparando en el modal de "Pinchar nueva nota", antes de publicarla
+  
+  // SISTEMA DE MISIONES
+  misiones: [],            // Misiones disponibles cargadas desde Supabase
+  misionesCompletadas: [], // Registro de misiones completadas por el usuario (sistema de honor)
+
   membresias: [],          // {id, tipo:'ejecutiva'|'miembros'|'guilda', grupo, seccion, perfil_id, nombre_manual, cargo}
   // A) Sondeo por diferencia: el id más alto ya recibido de cada tabla,
   // para pedir a partir de ahí en vez de volver a traer todo. Solo se usa
   // en tablas donde nunca se edita ni se borra una fila ya creada.
-    notasLastId: null, inscripcionesLastId: null, adjuntosLastId: null, chatOldestId: null, chatLoadingMore: false,
+  notasLastId: null, inscripcionesLastId: null, adjuntosLastId: null, chatOldestId: null, chatLoadingMore: false,
   reservaNotaId: null,     // id de la nota a la que se está apuntando ahora mismo (modal de reserva)
   rechazoNotaId: null,     // v3.9: nota que se está rechazando (modal de motivo de rechazo)
   notifs: {items:[]},      // v3.9: avisos locales del usuario (propuesta aprobada / rechazada)
@@ -2735,7 +2730,6 @@ let state = {
   seccion:null,
   seccionTipo:null,        // 'ejecutiva' | 'miembros' | 'guilda'
   seccionTab:'lista',
-  scouts:[{nombre:'Ibero', cargo:'Hermes Nacional 3'}],
   ejecutivaPorGrupo:{},    // {nombreGrupo: [{nombre,cargo}]}
   miembrosPorGrupo:{},     // {nombreGrupo: [{nombre,cargo}]} — altas manuales (gente sin cuenta propia todavía)
   perfiles: [],            // fila de la tabla "perfiles" de TODAS las cuentas reales: {id,nombre,rol,grupo,provincia,comunidad}
@@ -2752,7 +2746,6 @@ let state = {
 
   notasVisibles: 6,        // cuántas notas mostrar inicialmente en el corcho (se puede ampliar con "Ver más")
 
-  quickRole:'hermes',
   personalTab:'carta',
   viajes:[],
   syncStatus:{ok:null, msg:'Sin conectar todavía'},
@@ -2790,25 +2783,18 @@ function soyPresidenteDe(grupo){
   const hc = homeCtx();
   return grupo === hc.grupo;
 }
-/* True si el usuario actual pertenece a la guilda `guilda` del grupo `grupo`.
-   (Definida arriba, en el bloque de visibilidad v3.9: pertenezcoAGuilda.) */
-/* True si el usuario actual puede VER una guilda: sus miembros, el presidente
-   de su grupo y los cargos territoriales (hermes / ejecutivas). */
 function puedoVerGuilda(grupo, guilda){
   if(soyAdminTerritorial()) return true;
   if(soyPresidenteDe(grupo)) return true;
   return pertenezcoAGuilda(grupo, guilda);
 }
-/* ¿Puede el usuario actual GESTIONAR el grupo (añadir/editar/eliminar guildas)? */
 function puedoGestionarGrupo(grupo){
   return soyAdminTerritorial() || soyPresidenteDe(grupo);
 }
-/* ¿Puede gestionar una guilda concreta? (un coordinador gestiona su guilda) */
 function puedoGestionarGuilda(grupo, guilda){
   if(puedoGestionarGrupo(grupo)) return true;
   return currentRole() === 'coordinador_guilda' && pertenezcoAGuilda(grupo, guilda);
 }
-
 /* =========================================================
    CONEXIÓN SUPABASE
    - Las NOTAS (avisos/eventos/actividades) viven cada una en su
@@ -2845,6 +2831,8 @@ const SUPABASE_PROVINCIAS_REST = `${SUPABASE_URL}/rest/v1/provincias`;
 const SUPABASE_GRUPOS_REST = `${SUPABASE_URL}/rest/v1/grupos`;
 const SUPABASE_GUILDAS_REST = `${SUPABASE_URL}/rest/v1/guildas`;
 const SUPABASE_LOCALES_REST = `${SUPABASE_URL}/rest/v1/locales`;
+const SUPABASE_MISIONES_REST = `${SUPABASE_URL}/rest/v1/misiones`;
+const SUPABASE_MISIONES_COMP_REST = `${SUPABASE_URL}/rest/v1/misiones_completadas`;
 const SUPABASE_AUTH_URL = `${SUPABASE_URL}/auth/v1`;
 const SUPABASE_PERFILES_REST = `${SUPABASE_URL}/rest/v1/perfiles`;
 const SUPABASE_DM_TABLE = 'mensajes_directos';
@@ -4142,20 +4130,22 @@ function startSync(){
   // 3) El resto, en segundo plano y con prioridad más baja.
   //    Cargamos solo lo que NO se ha cargado ya, con un pequeño delay
   //    para no saturar la red justo al arrancar.
-  setTimeout(()=>{
+    setTimeout(()=>{
     fetchInscripciones();
     fetchAdjuntos();
     fetchChat();
     fetchMembresias();
     fetchEstructura();
     fetchLocales();
+    fetchMisiones();       // <--- AÑADE ESTA LÍNEA AQUÍ
     fetchMensajesDirectos();
   }, 300);
 
   // Sondeo de mensajes directos: cada 4s revisa mensajes nuevos / no leídos.
   if(dmPollTimer) clearInterval(dmPollTimer);
   dmPollTimer = setInterval(()=>{ fetchMensajesDirectos(true); }, 4000);
-}function render(){
+}
+function render(){
   destroyLeafletMap(); // limpiar el mapa ANTES de que el DOM que lo contiene desaparezca
   const root = document.getElementById('root');
   root.innerHTML = state.loggedIn ? renderApp() : renderLogin();
@@ -4256,12 +4246,7 @@ function renderLogin(){
       <button class="btn-primary" id="btn-auth-submit">Entrar</button>
       `}
 
-      <div class="quick-box">
-        <div class="quick-label">MODO PRUEBAS: SESIÓN RÁPIDA (sin cuenta)</div>
-        <div class="quick-grid">
-          ${QUICK_SESSIONS.map(q=>`<button class="${q.cls}" data-quick="${q.k}">${q.label}</button>`).join('')}
         </div>
-      </div>
       <div class="login-footer">△ ScoutPath OS v1.0</div>
     </div>
   </div>`;
@@ -4289,9 +4274,6 @@ function renderTopbar(){
   const hayPisos = pisos.length > 0;
   const multiPiso = pisos.length > 1;
 
-  // Label del chip:
-  // - Si el usuario ha elegido un piso esta sesión → lo mostramos.
-  // - Si no → mostramos el grupo por defecto.
   let labelChip = 'Mis secciones';
   let subChip = '';
   if(state.pisoActual){
@@ -4312,15 +4294,7 @@ function renderTopbar(){
         </span>
         ${multiPiso ? '<span class="asc-toggle" title="Ver todas mis secciones">▼</span>' : ''}
       </div>
-      ${state.authProfile ? `
       <div class="session-select" style="font-size:12.5px;color:var(--gray-700);">👤 ${displayName()}</div>
-      ` : `
-      <div class="session-select">Sesión rápida:
-        <select id="sel-session">
-          ${QUICK_SESSIONS.map(q=>`<option value="${q.k}" ${state.quickRole===q.k?'selected':''}>${q.label}</option>`).join('')}
-        </select>
-      </div>
-      `}
     </div>
     <div class="topbar-right">
       ${(()=>{
@@ -4335,7 +4309,6 @@ function renderTopbar(){
   ${renderNotifMenu()}
   ${renderAscensorMenu()}`;
 }
-
 /* Menú desplegable de avisos (aprobaciones y rechazos de tus propuestas). */
 function renderNotifMenu(){
   const items = misNotificaciones();
@@ -4734,8 +4707,7 @@ function renderStickyNota(n){
   const clase = n.estado === 'rechazada' ? ' es-rechazada' : (noPublicada ? ' es-propuesta' : '');
   return `
     <div class="sticky${clase}" data-note="${n.id}">
-      <div class="pin">📍</div>
-      ${puedeEditarNota(n) ? `
+            ${puedeEditarNota(n) ? `
       <div class="nota-menu">
         <button class="nota-menu-btn" data-nota-menu="${n.id}" type="button">⋮</button>
         <div class="nota-menu-dropdown" id="nota-menu-dropdown-${n.id}">
@@ -4933,7 +4905,144 @@ function nombreMes(mes){
   const nombres = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
   return nombres[mes] || '';
 }
+/* ---- SISTEMA DE MISIONES ---- */
+async function fetchMisiones(silent){
+  try{
+    const [resMis, resComp] = await Promise.all([
+      fetch(`${SUPABASE_MISIONES_REST}?select=*`, {headers: sbHeaders()}),
+      fetch(`${SUPABASE_MISIONES_COMP_REST}?select=*`, {headers: sbHeaders()})
+    ]);
+    if(resMis.ok) state.misiones = await resMis.json();
+    if(resComp.ok) state.misionesCompletadas = await resComp.json();
+    if(!silent && !state.modal) render();
+  }catch(e){ /* sin red */ }
+}
 
+function misionesVisibles(){
+  const hc = homeCtx();
+  const grupoActual = state.grupo ? state.grupo.nombre : hc.grupo;
+  const guildaActual = state.seccionTipo === 'guilda' ? state.seccion : null;
+
+  return state.misiones.filter(m => {
+    if(!m.grupo && !m.guilda) return true; // Globales
+    if(m.grupo === grupoActual && !m.guilda) return true; // De mi grupo
+    if(guildaActual && m.grupo === grupoActual && m.guilda === guildaActual) return true; // De la guilda donde estoy
+    if(!state.seccion && m.grupo === hc.grupo) return true; // Si estoy fuera, veo las de mi grupo principal
+    return false;
+  }).sort((a,b) => {
+    const da = a.fecha_limite ? new Date(a.fecha_limite).getTime() : Infinity;
+    const db = b.fecha_limite ? new Date(b.fecha_limite).getTime() : Infinity;
+    return da - db;
+  });
+}
+
+function tiempoRestante(fechaLimite){
+  if(!fechaLimite) return 'Sin límite';
+  const diff = new Date(fechaLimite).getTime() - new Date().getTime();
+  if(diff < 0) return '⛔ Caducada';
+  const dias = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const horas = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  if(dias > 0) return `⏳ Quedan ${dias} día${dias>1?'s':''}`;
+  if(horas > 0) return `⏳ Quedan ${horas} hora${horas>1?'s':''}`;
+  return '⚠️ ¡Últimos minutos!';
+}
+
+function estaMisionCompletada(misionId){
+  const myId = personaId();
+  return state.misionesCompletadas.some(c => String(c.mision_id) === String(misionId) && String(c.perfil_id) === String(myId));
+}
+
+async function marcarMisionCompletada(misionId){
+  const myId = personaId();
+  if(!myId) { showToast('Inicia sesión para completar misiones'); return; }
+  if(estaMisionCompletada(misionId)) return;
+
+  const nueva = { mision_id: misionId, perfil_id: myId };
+  state.misionesCompletadas.push(nueva);
+  render();
+  showToast('🎯 ¡Misión completada! Honor a tu palabra.');
+  
+  try{
+    await fetch(SUPABASE_MISIONES_COMP_REST, {
+      method: 'POST',
+      headers: sbHeaders({'Content-Type':'application/json', Prefer:'return:minimal'}),
+      body: JSON.stringify(nueva)
+    });
+  }catch(e){ warnCloudFail('Guardar misión completada'); }
+}
+
+function renderMisiones(){
+  const visibles = misionesVisibles();
+  const esGestor = puedoGestionarGrupo(state.grupo ? state.grupo.nombre : null) || (state.seccionTipo === 'guilda' && puedoGestionarGuilda(state.grupo ? state.grupo.nombre : null, state.seccion));
+
+  return `
+  <div class="misiones-wrap" style="margin-top:14px;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-family:var(--font-display);font-weight:800;font-size:16px;color:var(--purple-800);display:flex;align-items:center;gap:6px;">
+        🎯 Misiones Activas
+      </div>
+      ${esGestor ? `<button class="btn-green" id="btn-add-mision" style="padding:5px 10px;font-size:11px;">+ Nueva Misión</button>` : ''}
+    </div>
+    
+    ${visibles.length === 0 ? `
+      <div style="background:#F8F9FA;border:1px dashed #D1D5DB;border-radius:10px;padding:20px;text-align:center;color:var(--gray-500);font-size:12.5px;">
+        No hay misiones pendientes por aquí.<br>${esGestor ? '¡Crea una nueva misión para tu equipo!' : 'Disfruta del descanso, scout.'}
+      </div>
+    ` : `
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${visibles.map(m => {
+          const completada = estaMisionCompletada(m.id);
+          const caducada = m.fecha_limite && new Date(m.fecha_limite).getTime() < new Date().getTime();
+          return `
+          <div class="sticky" style="--rot:0deg;background:#fff;padding:12px;border-left:4px solid ${completada?'#15803D':caducada?'#B91C1C':'#7C3AED'};">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+              <div>
+                <b style="font-size:13.5px;color:var(--gray-900);">${esc(m.titulo)}</b>
+                <div style="font-size:11.5px;color:var(--gray-500);margin-top:2px;">${esc(m.descripcion || '')}</div>
+              </div>
+              <div class="nb nb-alcance" style="background:var(--purple-600);font-size:10px;">+${m.recompensa} PTS</div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+              <span style="font-size:11px;font-weight:700;color:${caducada?'#B91C1C':'var(--orange-600)'};">${tiempoRestante(m.fecha_limite)}</span>
+              ${completada 
+                ? `<span style="color:var(--green);font-weight:800;font-size:11px;">✓ Completada</span>`
+                : caducada
+                  ? `<span style="color:var(--gray-500);font-weight:800;font-size:11px;">Caducada</span>`
+                  : `<button class="sticky-cta" data-completar-mision="${m.id}" style="background:var(--purple-600);font-size:11px;padding:6px 12px;">Hecho</button>`}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    `}
+  </div>`;
+}
+function modalNuevaMision(){
+  const esGuilda = state.seccionTipo === 'guilda';
+  const nombreContexto = esGuilda ? `Guilda: ${state.seccion}` : `Grupo: ${state.grupo ? state.grupo.nombre : ''}`;
+  
+  return `
+  <div class="overlay" id="overlay-mision">
+    <div class="modal plain">
+      <div class="modal-head"><span>🎯 Crear Nueva Misión</span><button id="close-mision">✕</button></div>
+      <div class="modal-body">
+        <div style="font-size:11px;font-weight:800;color:var(--purple-600);margin-bottom:14px;text-transform:uppercase;">Destino: ${nombreContexto}</div>
+        
+        <div class="mfield"><label>Título de la misión</label><input id="mision-titulo" placeholder="Ej: Recogida de basura"></div>
+        <div class="mfield"><label>Descripción corta</label><textarea id="mision-desc" placeholder="Ej: Limpiar el río durante la ruta" rows="2"></textarea></div>
+        
+        <div style="display:flex;gap:12px;">
+          <div class="mfield" style="flex:1;"><label>Recompensa (PTS)</label><input id="mision-recompensa" type="number" value="50"></div>
+          <div class="mfield" style="flex:2;"><label>Fecha límite</label><input id="mision-fecha" type="date"></div>
+        </div>
+        
+        <div class="modal-actions" style="margin-top:20px;">
+          <button class="btn-cancel" id="cancel-mision">Cancelar</button>
+          <button class="btn-send" id="save-mision">💾 Crear Misión</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
 /* Genera el HTML del calendario. */
 function renderCalendario(){
   const { mes, anio } = calMesActual();
@@ -5183,6 +5292,7 @@ function renderGrupoList(){
         <div id="leaflet-map" style="height:280px;border-radius:10px;overflow:hidden;"></div>
       </div>
     </div>
+${renderMisiones()}
 ${renderCalendario()}
   </div>`;
 }
@@ -5234,6 +5344,7 @@ function renderGrupoDetail(){
       </div>
       ` : ''}
     </div>
+${renderMisiones()}
 ${renderCalendario()}
   </div>`;
 }
@@ -5443,6 +5554,7 @@ function renderModal(){
       if(state.modal==='leerNota') return modalLeerNota();
   if(state.modal==='rechazarNota') return modalRechazarNota();
   return '';
+  if(state.modal==='mision') return modalNuevaMision();
 }
 
 const NOTE_TYPES = [
@@ -6486,8 +6598,6 @@ function attachHandlers(){
   document.querySelectorAll('[data-ptab]').forEach(b=>{
     b.onclick = ()=>{ state.personalTab=b.dataset.ptab; render(); };
   });
-  const selSession = document.getElementById('sel-session');
-  if(selSession) selSession.addEventListener('change', ()=>{ state.quickRole=selSession.value; cargarNotifs(); render(); });
 
   const btnAddViaje = document.getElementById('btn-add-viaje');
   if(btnAddViaje) btnAddViaje.onclick = ()=>{
@@ -6972,7 +7082,58 @@ function attachHandlers(){
       const lbl=document.getElementById('val-'+s.dataset.slider);
       if(lbl) lbl.textContent=(v>=0?'+':'')+v;
     });
-  });
+ // Abrir modal de crear misión
+  const btnAddMision = document.getElementById('btn-add-mision');
+  if(btnAddMision) btnAddMision.onclick = ()=>{ state.modal = 'mision'; render(); };
+
+  // Guardar la nueva misión en Supabase
+  const saveMision = document.getElementById('save-mision');
+  if(saveMision) saveMision.onclick = async ()=>{
+    const titulo = document.getElementById('mision-titulo').value;
+    const desc = document.getElementById('mision-desc').value;
+    const recompensa = parseInt(document.getElementById('mision-recompensa').value) || 10;
+    const fechaInput = document.getElementById('mision-fecha').value;
+    
+    if(!titulo) { showToast('El título es obligatorio'); return; }
+    
+    const fecha_limite = fechaInput ? new Date(fechaInput + 'T23:59:59').toISOString() : null;
+    
+    const esGuilda = state.seccionTipo === 'guilda';
+    const nuevaMision = {
+      grupo: state.grupo ? state.grupo.nombre : null,
+      guilda: esGuilda ? state.seccion : null,
+      titulo: titulo,
+      descripcion: desc,
+      recompensa: recompensa,
+      fecha_limite: fecha_limite
+    };
+
+    state.misiones.push({ ...nuevaMision, id: Date.now() });
+    state.modal = null;
+    render();
+    showToast('🎯 Misión creada');
+
+    try{
+      const res = await fetch(SUPABASE_MISIONES_REST, {
+        method: 'POST',
+        headers: sbHeaders({'Content-Type':'application/json', Prefer:'return=representation'}),
+        body: JSON.stringify(nuevaMision)
+      });
+      if(res.ok){
+        const rows = await res.json();
+        if(rows && rows[0]) {
+          const idx = state.misiones.findIndex(m => m.titulo === titulo && m.id === state.misiones[state.misiones.length-1].id);
+          if(idx > -1) state.misiones[idx].id = rows[0].id;
+        }
+      }
+    }catch(e){ warnCloudFail('Crear misión'); }
+  };
+
+  // Cerrar modales de misión
+  const closeMision = document.getElementById('close-mision');
+  if(closeMision) closeMision.onclick = ()=>{ state.modal=null; render(); };
+  const cancelMision = document.getElementById('cancel-mision');
+  if(cancelMision) cancelMision.onclick = ()=>{ state.modal=null; render(); };  });
   const closeEvento = document.getElementById('close-evento'); if(closeEvento) closeEvento.onclick=()=>{state.modal=null;render();};
   const sendEvento = document.getElementById('send-evento');
   if(sendEvento) sendEvento.onclick = ()=>{
